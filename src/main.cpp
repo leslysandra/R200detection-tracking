@@ -114,9 +114,8 @@ try {
 	dev->start();
 
 	// recording image
-	Size size_ = Size(640, 480);
 	int codec = CV_FOURCC('M', 'J', 'P', 'G');
-	cv::VideoWriter out = VideoWriter("output.avi", codec, 60.0, size_, true);
+	cv::VideoWriter out = VideoWriter("output.avi", codec, 60.0, Size(640, 480), true);
 
     	// OpenCV frame definition. They are the containers from which frames are writen to and exihibit.
     	cv::Mat rgbmat, depthmat, depthAndRgb, regframe;
@@ -193,12 +192,14 @@ try {
   		// Draw contours
   		cv::Mat drawing = cv::Mat::zeros( canny_output.size(), CV_8UC3 );
  		for( int i = 0; i< contours_.size(); i++ ) {
-       			drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
+			// only countours	       			
+			drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
+			// countours + filled color
+			//drawContours(drawing, contours_, i, cv::Scalar(255,0,0), CV_FILLED, 8, hierarchy_);
      		}
 
-  		// Show in a window
-  		cv::imshow( "Contours", drawing);
 
+/*
 		// obtain the image ROI
 		cv::Mat undistortedFrame = cv::Mat(regframe.size(), CV_8UC1);
 		cv::Mat segmat = Mat::zeros(regframe.size(), undistortedFrame.type());
@@ -219,11 +220,12 @@ try {
 			// region of interest
 		    	cv::Mat roi(regframe, r);
 
+
 		    	// make a black mask, same size:
 		    	cv::Mat maskROI(roi.size(), roi.type(), cv::Scalar::all(0));
 
 		    	// with a white, filled circle in it:
-		    	cv::circle(maskROI, cv::Point(radius,radius), radius, cv::Scalar::all(255), -1);
+		    	cv::circle(rgbmat, cv::Point(radius,radius), radius, cv::Scalar::all(255), -1);
 
 		    	// combine roi & mask:
 		    	cv::Mat roiArea = roi & maskROI;
@@ -233,38 +235,52 @@ try {
 
 			cout << "distance: " << meanDistance << endl;
 
-		    	/* perform segmentation in order to get the contraction index feature.
-			The result will be saved in ci variable*/
+		    	// perform segmentation in order to get the contraction index feature. The result will be saved in ci variable
 		    	// void segmentDepth(cv::Mat& input, cv::Mat& dst, cv::Mat& roiSeg, int sX, int sY, int threshold)
 		    	segmentDepth(regframe, segmat, roiSegment, mainCenter.x, mainCenter.y, ci, 300);
 
+		} */
+
+
+
+		//cv::Mat image_roi = cv::Mat(drawing.size(), CV_8UC1);
+		if ((mainCenter.x != -1000) && (mainCenter.x != 0)) {
+			int radius = 5;
+
+			// Rect containing ROI
+			cv::Rect r(mainCenter.x-radius, mainCenter.y-radius, radius*2,radius*2);
+			cv::Mat image_roi = drawing(r);
+
+			cv:Scalar m = cv::mean(image_roi);        // compute mean value of the region of interest (mm).
+		    	meanDistance = m[0] / 1000.0f;            // compute distance (in meters)
+
+			cout << "distance: " << meanDistance << endl;
+
 		}
+
+
 
 
 		/* A LOOP TO PRINT THE DISTANCE AND HISTORY TRACE IN THE DEPTH FRAME. IT JUST SERVES AS A
          	VISUAL AID OF WHAT IS GOING ON.*/
     		for (int i=1; i < (pts.size()-1); i++){
-	    		// if either of the tracked points are None, ignore
-	    		// them
+	    		// if either of the tracked points are None, ignore them
 
 	    		cv::Point2f ptback = pts[i - 1];
 	    		cv::Point2f pt = pts[i];
-	    		if ((ptback.x == -1000) or (pt.x == -1000)){
-		        continue;
-	    		}
+	    		if ((ptback.x == -1000) or (pt.x == -1000)) continue;
 
-	    		// otherwise, compute the thickness of the line and
-	    		// draw the connecting lines
+	    		// otherwise, compute the thickness of the line and draw the connecting lines
 	    		int thickness = int(sqrt(BUFFER / float(i + 1)) * 2.5);
-	    		line(regframe, pts[i - 1], pts[i], cv::Scalar(0, 0, 255), thickness);
-		    // Write distance
-		    cv::putText(regframe,
-		    std::to_string(meanDistance),
-		    cv::Point((512/2)-60,85), // Coordinates
-		    	cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
-		    	1.0, // Scale. 2.0 = 2x bigger
-		    	cv::Scalar(255,255,255), // Color
-		    	1 // Thickness
+	    		line(drawing, pts[i - 1], pts[i], cv::Scalar(0, 0, 255), thickness);
+		    	// Write distance
+		    	cv::putText(drawing,
+			    std::to_string(meanDistance),
+			    cv::Point((512/2)-60,85), // Coordinates
+			    cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
+			    1.0, // Scale. 2.0 = 2x bigger
+			    cv::Scalar(255,255,255), // Color
+			    1 // Thickness
 		    ); // Anti-alias
 	    	}
 
@@ -272,9 +288,12 @@ try {
 		/* Update/show images */
 		cv::imshow("afterTRACK",rgbmat);
        	 	//cv::imshow("depth", depthmat);
-        	//cv::imshow("undistortedFrame", undistortedFrame);
-		cv::imshow("segmat", segmat);
+			//cv::imshow("segmat", segmat);
 		//cv::imshow("roiSegment", roiSegment);
+
+		// Show in a window
+  		cv::imshow( "Contours", drawing);
+
 
 		out.write(rgbmat);
 

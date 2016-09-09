@@ -20,7 +20,6 @@ cv::Rect objectBoundingRectangle = cv::Rect(0,0,0,0);
 
 /* trackUser -- Function used to track color blobs on a RGB image. */
 void trackUser(cv::Mat& src, cv::Mat& regmask) {
-
 	/* resize the frame and convert it to the HSV color space... */
 	cv::Mat frame(src.size(), src.type());                          // set dimensions
 	cv::Mat(src).copyTo(frame);					// copy
@@ -53,8 +52,7 @@ void trackUser(cv::Mat& src, cv::Mat& regmask) {
 	cv::imshow("mask",mask);           // exhibit mask.
 
 
-	/*
-	// red mask for detecting robot
+	/* // red mask for detecting robot
 	cv::Mat redmask;
 	cv::inRange(hsv,cv::Scalar(0,200,0), cv::Scalar(19,255,255), redmask); // detect RED
 	// morphological opening (remove small objects from the foreground)
@@ -69,8 +67,7 @@ void trackUser(cv::Mat& src, cv::Mat& regmask) {
 	cv::threshold(redmask,redmask, SENSITIVITY_VALUE, 255, cv::THRESH_BINARY);
 	cv::imshow("maskRED",redmask);	*/
 
-	/* 
-	// another method of detecting the object
+	/*  // another method of detecting the object
 	//searchForMovement(mask, frame);*/
 
 
@@ -105,9 +102,10 @@ void trackUser(cv::Mat& src, cv::Mat& regmask) {
 
 		cv::Point2f tempcenter;
   		float radius;
+		// cv::minEnclosingCircle(points, center, radius)
 		cv::minEnclosingCircle((cv::Mat)contours[largest_contour_index], tempcenter, radius);
 
-		// cv::Moments
+		// cv::moments(array, bnaryImage)
 		cv::Moments M = cv::moments((cv::Mat)contours[largest_contour_index]);
 		center = cv::Point2f(int(M.m10 / M.m00), int(M.m01 / M.m00));
 
@@ -221,11 +219,10 @@ void segmentDepth(cv::Mat& input, cv::Mat& dst, cv::Mat& roiSeg, int sX, int sY,
     if(in_pxl_pos == 0) {
 	cout << "THE SEED DEPTH VALUE IS ZERO!!!!!" << endl;
         //ROS_WARN_STREAM("THE SEED DEPTH VALUE IS ZERO!!!!!");
-    }else if (missedPlayer){
-        //ROS_INFO_STREAM("PLAYER IS MISSING!");          //Send a message to rosout
+    } else if (missedPlayer) {
 	cout << "PLAYER IS MISSING" << endl;
         ci = -1 ;                                       //Set the value indicating player missing.
-    }else{
+    } else {
         dst.at<float>(sY,sX) = 255;                     // add seed to output image.
 
 	cout << "sono qui!!!" << endl;
@@ -356,13 +353,11 @@ void segmentDepth(cv::Mat& input, cv::Mat& dst, cv::Mat& roiSeg, int sX, int sY,
             cv::dilate(dst, dst, dilateElement);
 
             int largest_area=0;
-    		int largest_contour_index=0;
+    	    int largest_contour_index=0;
 
-    		// find the largest contour in the mask, then use
-    		// it to compute the minimum enclosing circle and
-    		// centroid
-    		for(int i=0; i < contours.size();i++){
-    			// iterate through each contour.
+    	    // find the largest contour in the mask, then use it to compute the minimum enclosing circle and centroid
+    	    for(int i=0; i < contours.size();i++){
+    		// iterate through each contour.
                 double a = cv::contourArea(cv::Mat(contours[i]),false);  //  Find the area of contour
     			if( a > largest_area){
     				largest_area=a;
