@@ -11,12 +11,36 @@
 #include <stdio.h>
 
 using namespace std;
+using namespace cv;
 
 const static int SENSITIVITY_VALUE = 20;
 // just one object to search for and keep track of its position
 int theObject[2] = {0,0};
 // bounding rectangle of the object (using the center of this as its position)
 cv::Rect objectBoundingRectangle = cv::Rect(0,0,0,0);
+
+/* Creates the optFlow map*/
+static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, Mat& aux, int step, double, const Scalar& color) {
+    for(int y = 0; y < cflowmap.rows; y += step) {
+        for(int x = 0; x < cflowmap.cols; x += step) {
+            const Point2f& fxy = flow.at<Point2f>(y, x);
+	    // drawing the lines of motion
+            line(cflowmap, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
+            circle(cflowmap, Point(x,y), 2, color, -1);
+
+	    if( (fabs(fxy.x)>8) && fabs(fxy.x<15) && ( (fabs(fxy.y)>8 && fabs(fxy.y)<15) )) {		
+		//line(aux, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
+		circle(aux, Point(x,y), 2, color, -1);
+
+		/*if (fxy.x < 0) cout << "You moved right!" << endl; 
+		else cout << "You moved left!" << endl;
+		if (fxy.y < 0) cout << "You moved up!" << endl; 
+		else cout << "You moved down!" << endl;*/
+	    }
+        }
+    }
+}
+
 
 /* trackUser -- Function used to track color blobs on a RGB image. */
 void trackUser(cv::Mat& src, cv::Mat& regmask) {
@@ -26,6 +50,7 @@ void trackUser(cv::Mat& src, cv::Mat& regmask) {
         cv::Mat hsv = cv::Mat::zeros(frame.size(), frame.type());       // define container for HSV mat
 	cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);                   // convert
 
+	// MASK
     	/* construct a mask for the color (default color to "green"), then perform
 	a series of dilations and erosions to remove small blobs */
 	cv::Mat mask;
@@ -50,25 +75,6 @@ void trackUser(cv::Mat& src, cv::Mat& regmask) {
 	cv::threshold(mask, mask, SENSITIVITY_VALUE, 255, cv::THRESH_BINARY);
 
 	cv::imshow("mask",mask);           // exhibit mask.
-
-
-	/* // red mask for detecting robot
-	cv::Mat redmask;
-	cv::inRange(hsv,cv::Scalar(0,200,0), cv::Scalar(19,255,255), redmask); // detect RED
-	// morphological opening (remove small objects from the foreground)
-    	cv::erode(redmask, redmask, erodeElement);
-	cv::dilate(redmask, redmask, dilateElement);
-	// morphological closing (fill small holes in the foreground)
-  	dilate(redmask, redmask, dilateElement);
-  	erode(redmask, redmask, erodeElement);
-	// blur
-	cv::blur(redmask,redmask,cv::Size(SENSITIVITY_VALUE, SENSITIVITY_VALUE));
-	// threshold again to obtain binary image from blur output
-	cv::threshold(redmask,redmask, SENSITIVITY_VALUE, 255, cv::THRESH_BINARY);
-	cv::imshow("maskRED",redmask);	*/
-
-	/*  // another method of detecting the object
-	//searchForMovement(mask, frame);*/
 
 
 	// find contours in the mask and initialize the current (x, y) center of the ball
@@ -173,6 +179,7 @@ void searchForMovement(cv::Mat thresholdImage, cv::Mat &cameraFeed) {
 		theObject[0] = xpos;
 		theObject[1] = ypos;
 	}
+
 	//make some temp x and y variables so we dont have to type out so much
 	int x = theObject[0];
 	int y = theObject[1];

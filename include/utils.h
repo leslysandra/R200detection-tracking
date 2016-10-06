@@ -12,6 +12,9 @@
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
 
+/* */
+static void drawOptFlowMap(const cv::Mat& flow, cv::Mat& cflowmap, cv::Mat& aux, int step, double, const cv::Scalar& color);
+
 /* trackUser -- Function used to track color blobs on a RGB image. */
 void trackUser(cv::Mat& src, cv::Mat& regmask);
 

@@ -35,7 +35,7 @@
 #include "common.h"
 /* ... */
 
-/* HSV space variables for blob detection */
+/* HSV space variables for GREEN blob detection */
 int hMin = 30;
 int sMin = 70;
 int vMin = 64;
@@ -121,6 +121,10 @@ try {
     	cv::Mat rgbmat, depthmat, depthAndRgb, regframe;
     	int count = 0;
 
+    	// OpenCV frame definition.
+	Mat gray, flow;
+	UMat prevgray;
+
 	/* Create the blob detection image panel together with the
         sliders for run time adjustments. */
     	cv::namedWindow("mask", 1);
@@ -174,6 +178,51 @@ try {
 		depthM.convertTo(img0, CV_8UC1, scale_);
 		cv::applyColorMap(img0, depthmat, cv::COLORMAP_JET); // saving data into cv::mat container depthmat
 
+		// TEST OPTICAL FLOW
+		// just make current frame gray
+	   	cvtColor(rgbmat, gray, COLOR_BGR2GRAY);
+
+		if (!prevgray.empty()) {
+			cout << "!prevgray.empty()" << endl;
+
+			flow = Mat(gray.size(), CV_32FC2);
+			calcOpticalFlowFarneback(prevgray, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+			// magnitude,angle
+			cv::Mat xy[2];
+			split(flow, xy);
+
+			//calculate angle and magnitude
+			Mat magnitude, angle;
+			cartToPolar(xy[0], xy[1], magnitude, angle, true);
+
+			//translate magnitude to range [0:1]
+			double mag_max;
+			minMaxLoc(magnitude, 0, &mag_max);
+			magnitude.convertTo(magnitude, 0, 1.0/mag_max);
+
+			//build hsv image
+			Mat _hsv[3], hsv;
+			_hsv[0] = angle;
+			_hsv[1] = Mat::ones(angle.size(), CV_32F);
+			_hsv[2] = magnitude;
+			//merge(_hsv, 3, hsv);
+
+			//convert to BGR and show
+			//Mat bgr;//CV_32FC3 matrix
+			//cvtColor(hsv, bgr, COLOR_HSV2BGR);
+
+			//imshow("bgr", bgr);
+			//imshow("flatFlow", magnitude);
+
+			//cout << "bgr.type(): " << bgr.type() << endl;
+			cout << "magnitude.type(): " << magnitude.type() << endl;
+
+		} else {
+			cout << "not" << endl; 
+			gray.copyTo(prevgray);
+		}
+
 		// Search for the color blob representing the human
 		trackUser(rgbmat, regframe);
 
@@ -190,7 +239,7 @@ try {
  		cv::findContours(canny_output, contours_, hierarchy_, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
 
   		// Draw contours
-  		cv::Mat drawing = cv::Mat::zeros( canny_output.size(), CV_8UC3 );
+  		cv::Mat drawing = cv::Mat::zeros(canny_output.size(), CV_8UC3 );
  		for( int i = 0; i< contours_.size(); i++ ) {
 			// only countours	       			
 			drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
@@ -254,18 +303,13 @@ try {
 			cv:Scalar m = cv::mean(image_roi);        // compute mean value of the region of interest (mm).
 		    	meanDistance = m[0] / 1000.0f;            // compute distance (in meters)
 
-			cout << "distance: " << meanDistance << endl;
+			//cout << "distance: " << meanDistance << endl;
 
 		}
 
 
-
-
-		/* A LOOP TO PRINT THE DISTANCE AND HISTORY TRACE IN THE DEPTH FRAME. IT JUST SERVES AS A
-         	VISUAL AID OF WHAT IS GOING ON.*/
-    		for (int i=1; i < (pts.size()-1); i++){
-	    		// if either of the tracked points are None, ignore them
-
+		/* PRINT THE DISTANCE */
+    		/*for (int i=1; i < (pts.size()-1); i++) {
 	    		cv::Point2f ptback = pts[i - 1];
 	    		cv::Point2f pt = pts[i];
 	    		if ((ptback.x == -1000) or (pt.x == -1000)) continue;
@@ -275,21 +319,19 @@ try {
 	    		line(drawing, pts[i - 1], pts[i], cv::Scalar(0, 0, 255), thickness);
 		    	// Write distance
 		    	cv::putText(drawing,
-			    std::to_string(meanDistance),
-			    cv::Point((512/2)-60,85), // Coordinates
-			    cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
-			    1.0, // Scale. 2.0 = 2x bigger
-			    cv::Scalar(255,255,255), // Color
-			    1 // Thickness
-		    ); // Anti-alias
-	    	}
+			    		std::to_string(meanDistance),
+			    		cv::Point((512/2)-60,85), // Coordinates
+			    		cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
+			    		1.0, // Scale 2.0 = 2x bigger
+			    		cv::Scalar(255,255,255), // Color
+			    		1 // Thickness
+		    		); // Anti-alias
+	    	}*/
 
 
 		/* Update/show images */
 		cv::imshow("afterTRACK",rgbmat);
        	 	//cv::imshow("depth", depthmat);
-			//cv::imshow("segmat", segmat);
-		//cv::imshow("roiSegment", roiSegment);
 
 		// Show in a window
   		cv::imshow( "Contours", drawing);
@@ -305,6 +347,8 @@ try {
 			//cleaning up
  			cvDestroyAllWindows(); 
 		}
+
+		gray.copyTo(prevgray);
 		
 	}
 
