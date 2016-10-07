@@ -19,36 +19,13 @@ int theObject[2] = {0,0};
 // bounding rectangle of the object (using the center of this as its position)
 cv::Rect objectBoundingRectangle = cv::Rect(0,0,0,0);
 
-/* Creates the optFlow map*/
-static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, Mat& aux, int step, double, const Scalar& color) {
-    for(int y = 0; y < cflowmap.rows; y += step) {
-        for(int x = 0; x < cflowmap.cols; x += step) {
-            const Point2f& fxy = flow.at<Point2f>(y, x);
-	    // drawing the lines of motion
-            line(cflowmap, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
-            circle(cflowmap, Point(x,y), 2, color, -1);
-
-	    if( (fabs(fxy.x)>8) && fabs(fxy.x<15) && ( (fabs(fxy.y)>8 && fabs(fxy.y)<15) )) {		
-		//line(aux, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
-		circle(aux, Point(x,y), 2, color, -1);
-
-		/*if (fxy.x < 0) cout << "You moved right!" << endl; 
-		else cout << "You moved left!" << endl;
-		if (fxy.y < 0) cout << "You moved up!" << endl; 
-		else cout << "You moved down!" << endl;*/
-	    }
-        }
-    }
-}
-
-
 /* trackUser -- Function used to track color blobs on a RGB image. */
 void trackUser(cv::Mat& src, cv::Mat& regmask) {
 	/* resize the frame and convert it to the HSV color space... */
-	cv::Mat frame(src.size(), src.type());                          // set dimensions
-	cv::Mat(src).copyTo(frame);					// copy
-        cv::Mat hsv = cv::Mat::zeros(frame.size(), frame.type());       // define container for HSV mat
-	cv::cvtColor(frame, hsv, cv::COLOR_BGR2HSV);                   // convert
+	Mat frame(src.size(), src.type());                          // set dimensions
+	Mat(src).copyTo(frame);					    // copy
+        Mat hsv = cv::Mat::zeros(frame.size(), frame.type());       // define container for HSV mat
+	cvtColor(frame, hsv, cv::COLOR_BGR2HSV);                   // convert
 
 	// MASK
     	/* construct a mask for the color (default color to "green"), then perform
@@ -60,7 +37,6 @@ void trackUser(cv::Mat& src, cv::Mat& regmask) {
 	cv::Mat erodeElement = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(5, 5));
 	cv::Mat dilateElement = cv::getStructuringElement(cv::MORPH_ELLIPSE, cv::Size(7, 7));
 
-    	// perform erode and dilate operations
 	// morphological opening (remove small objects from the foreground)
     	cv::erode(mask, mask, erodeElement);
 	cv::erode(mask, mask, erodeElement);
@@ -157,7 +133,6 @@ void searchForMovement(cv::Mat thresholdImage, cv::Mat &cameraFeed) {
 	std::vector<std::vector<cv::Point> > contours;
 	std::vector<cv::Vec4i> hierarchy;
 	//find contours of filtered image using openCV findContours function
-	//findContours(temp,contours,hierarchy,CV_RETR_CCOMP,CV_CHAIN_APPROX_SIMPLE);// retrieves all contours
 	findContours(temp,contours,hierarchy,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_SIMPLE);// retrieves external contours
 
 	//if contours vector is not empty, we have found some objects
@@ -225,15 +200,11 @@ void segmentDepth(cv::Mat& input, cv::Mat& dst, cv::Mat& roiSeg, int sX, int sY,
 
     if(in_pxl_pos == 0) {
 	cout << "THE SEED DEPTH VALUE IS ZERO!!!!!" << endl;
-        //ROS_WARN_STREAM("THE SEED DEPTH VALUE IS ZERO!!!!!");
     } else if (missedPlayer) {
 	cout << "PLAYER IS MISSING" << endl;
         ci = -1 ;                                       //Set the value indicating player missing.
     } else {
         dst.at<float>(sY,sX) = 255;                     // add seed to output image.
-
-	cout << "sono qui!!!" << endl;
-
         // Mark the seed as 1, for the segmentation mask.
     	reach[sY][sX] = 1;
         pixels++;                                        // increase the pixel counter.
@@ -261,9 +232,9 @@ void segmentDepth(cv::Mat& input, cv::Mat& dst, cv::Mat& roiSeg, int sX, int sY,
                 threshold)){
                 reach[y][x+1] = true;
                 seg_queue.push(std::make_pair(y, x+1));
-    			float &pixel = dst.at<float>(y,x+1);
+    		float &pixel = dst.at<float>(y,x+1);
                 pixel = 255;
-    			pixels++;;
+    		pixels++;;
 
     		}
 

@@ -36,25 +36,15 @@
 /* ... */
 
 /* HSV space variables for GREEN blob detection */
-int hMin = 30;
-int sMin = 70;
-int vMin = 64;
+int hMin = 40;
+int sMin = 100;
+int vMin = 80;
 int hMax = 70;
 int sMax = 255;
 int vMax = 255;
 /* ... */
 
-/* HSV space variables for RED blob detection */
-int hMinR = 0;
-int sMinR = 200;
-int vMinR = 0;
-int hMaxR = 19;
-int sMaxR = 255;
-int vMaxR = 255;
-
-
 int thresh = 100;
-int max_thresh = 255;
 
 
 using namespace std;
@@ -75,6 +65,42 @@ void sigint_handler(int s){
     protonect_shutdown = true;
 }
 
+/* Creates the optFlow map*/
+static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, Mat& aux, int step, double, const Scalar& color) {
+    for(int y = 0; y < cflowmap.rows; y += step) {
+        for(int x = 0; x < cflowmap.cols; x += step) {
+            const Point2f& fxy = flow.at<Point2f>(y, x);
+
+            // drawing the lines of motion
+	    line(cflowmap, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
+            circle(cflowmap, Point(x,y), 2, color, -1);
+
+	    if( (fabs(fxy.x)>5) && (fabs(fxy.y)>5) ) {		
+		//line(aux, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
+		circle(aux, Point(x,y), 2, Scalar(255,255,255), -1); 
+	    }
+        }
+    }
+}
+
+/* Creates the blob/optFlow map*/
+static void boblification(const Mat& flow, Mat& flowAndColor, Mat& result, int sX, int sY) {
+    	long int pixels = 0; // pixels counter
+	vector<vector<int> > reach;	       // binary mask for the segmentation.
+	for (int i = 0; i < flow.rows; i++){	// values in zero, no pixel is assigned to the segmentation.
+		reach.push_back(vector<int>(flow.cols));
+	}
+
+	// Define the queue. NOTE: it is a BFS based algorithm.
+	std::queue< std::pair<int,int> > seg_queue;
+
+	cout << "sX: " << sX << " - sY: " << sY << endl;
+
+	// verify the depth value of the seed position.
+	//float &in_pxl_pos = flow.at<float>(sY,sX);
+	//cout << "center value: " << in_pxl_pos << endl;
+}
+
 /* main */
 int main(int argc, char** argv)
 try {
@@ -89,11 +115,8 @@ try {
 	// exit if not device is already connected
         if (ctx.get_device_count() == 0) return EXIT_FAILURE;
 
-        // camera
-	int cam = 0;
-
 	// rs defining device to be used
-	rs::device * dev = ctx.get_device(cam);
+	rs::device * dev = ctx.get_device(0);
 
         cout << "Using device..."<< endl <<"   name: " << dev->get_name() << endl << "   serial number: "
 	<< dev->get_serial() << endl << "   firmware version: " << dev->get_firmware_version() 
@@ -106,27 +129,24 @@ try {
 
 	// settings to improve the DEPTH image
 	rs::apply_depth_control_preset(dev, 3);
-	//rs::option::r200_depth_control_neighbor_threshold;
 
         cout << "Device is warming up... " << endl << endl;
 
 	// start the device
 	dev->start();
 
-	// recording image
-	int codec = CV_FOURCC('M', 'J', 'P', 'G');
-	cv::VideoWriter out = VideoWriter("output.avi", codec, 60.0, Size(640, 480), true);
+	// recording
+	//int codec = CV_FOURCC('M', 'J', 'P', 'G');
+	//cv::VideoWriter out = VideoWriter("output.avi", codec, 60.0, Size(640, 480), true);
 
-    	// OpenCV frame definition. They are the containers from which frames are writen to and exihibit.
-    	cv::Mat rgbmat, depthmat, depthAndRgb, regframe;
-    	int count = 0;
+    	// openCV frame containers
+    	cv::Mat rgbmat, depthmat, depthAndRgb, regframe, aux, output;
 
-    	// OpenCV frame definition.
-	Mat gray, flow;
+    	// openCV frame definition for Optical Flow
+	Mat gray, flow, sflow, flow1;
 	UMat prevgray;
 
-	/* Create the blob detection image panel together with the
-        sliders for run time adjustments. */
+	// blob detection image panel
     	cv::namedWindow("mask", 1);
 
     	cv::createTrackbar("hMin", "mask", &hMin, 256);
@@ -135,19 +155,15 @@ try {
     	cv::createTrackbar("hMax", "mask", &hMax, 256);
     	cv::createTrackbar("sMax", "mask", &sMax, 256);
     	cv::createTrackbar("vMax", "mask", &vMax, 256);
-    	/* ---- */
 
     	/* FEATURE VARIABLES */
     	float meanDistance = 0;         // distance feature
-    	float ci = 0;                   // contraction index
-
-	bool acquire = true;		// control WHILE loop
 
 	// capture first 50 frames to allow camera to stabilize
 	for (int i = 0; i < 50; ++i) dev->wait_for_frames();
 
 	// loop -- DATA ACQUISITION
-	while (acquire) {
+	while (true) {
 
 		// wait for new frame data
 		dev->wait_for_frames();
@@ -168,7 +184,6 @@ try {
 		cv::Mat depth16(480, 640, CV_16UC1, (void*) depth_frame);
                 cv::Mat depthM(depth16.size().height, depth16.size().width, CV_16UC1);
                 depth16.convertTo(depthM, CV_8UC3);
-
 		// min/max distance from the camera
 		unsigned short min = 0.5, max = 3.5;
 		cv::Mat img0 = cv::Mat::zeros(depthM.size().height, depthM.size().width, CV_8UC1);
@@ -176,17 +191,27 @@ try {
 		double scale_ = 255.0 / (max-min);
 
 		depthM.convertTo(img0, CV_8UC1, scale_);
-		cv::applyColorMap(img0, depthmat, cv::COLORMAP_JET); // saving data into cv::mat container depthmat
+		cv::applyColorMap(img0, depthmat, cv::COLORMAP_JET); // ColorMap to depth matrix
 
 		// TEST OPTICAL FLOW
-		// just make current frame gray
-	   	cvtColor(rgbmat, gray, COLOR_BGR2GRAY);
+		Mat frame(rgbmat.size(), rgbmat.type());
+		rgbmat.copyTo(frame);
+	   	cvtColor(frame, gray, COLOR_RGB2GRAY);
 
 		if (!prevgray.empty()) {
-			cout << "!prevgray.empty()" << endl;
-
 			flow = Mat(gray.size(), CV_32FC2);
+
+			// Optical Flow
 			calcOpticalFlowFarneback(prevgray, gray, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+			// optical flow points
+			sflow = Mat(flow.size(), CV_8UC3);
+			aux = Mat::ones(flow.size(), CV_8U);
+			drawOptFlowMap(flow, sflow, aux, 16, 1.5, Scalar(0, 255, 0));
+			//imshow("sflow", sflow); //imshow("flow_aux", aux);
+
+			//cvtColor(sflow, flow1, CV_BGR2GRAY);
+			aux.convertTo(flow1, CV_8U);
 
 			// magnitude,angle
 			cv::Mat xy[2];
@@ -195,166 +220,66 @@ try {
 			//calculate angle and magnitude
 			Mat magnitude, angle;
 			cartToPolar(xy[0], xy[1], magnitude, angle, true);
-
-			//translate magnitude to range [0:1]
 			double mag_max;
 			minMaxLoc(magnitude, 0, &mag_max);
-			magnitude.convertTo(magnitude, 0, 1.0/mag_max);
+			magnitude.convertTo(magnitude, 0.0, 255.0/mag_max);
+			//imshow("magnitudeFlow", magnitude);
 
-			//build hsv image
-			Mat _hsv[3], hsv;
-			_hsv[0] = angle;
-			_hsv[1] = Mat::ones(angle.size(), CV_32F);
-			_hsv[2] = magnitude;
-			//merge(_hsv, 3, hsv);
+		} else gray.copyTo(prevgray);
 
-			//convert to BGR and show
-			//Mat bgr;//CV_32FC3 matrix
-			//cvtColor(hsv, bgr, COLOR_HSV2BGR);
+		// method to track the color blob representing the human
+		Mat frameToTrack(rgbmat.size(), rgbmat.type());
+		rgbmat.copyTo(frameToTrack);
+		trackUser(frameToTrack, regframe);
 
-			//imshow("bgr", bgr);
-			//imshow("flatFlow", magnitude);
+		// flow matrix AND green track
+     		if (flow1.cols > 0 && flow1.rows > 0) {
+     			Mat res;
+     			addWeighted( flow1, 0.5, regframe, 0.5, 0.0, res);
+			//bitwise_and(flow1, regframe, res, regframe);
+			circle(res, mainCenter, 5, cv::Scalar(255, 255, 255), -1);
+			imshow("res", res);
+			// boblificatonMethod(input: flow1, res, output)
+			//boblification(flow1, res, output, mainCenter.x, mainCenter.y);
+     		}
 
-			//cout << "bgr.type(): " << bgr.type() << endl;
-			cout << "magnitude.type(): " << magnitude.type() << endl;
 
-		} else {
-			cout << "not" << endl; 
-			gray.copyTo(prevgray);
-		}
-
-		// Search for the color blob representing the human
-		trackUser(rgbmat, regframe);
-
-		// detecting borders
+		/*// detecting borders
 		cv::Mat clonemask = regframe.clone();
 		cv::Mat canny_output;
   		std::vector<std::vector<cv::Point> > contours_;
   		std::vector<cv::Vec4i> hierarchy_;
-
-  		// Detect edges using canny
-		// void Canny(input, output_edges, threshold1, threshold2, int apertureSize=3, bool L2gradient=false)
+  		// detect edges using canny
   		Canny(clonemask, canny_output, thresh, thresh*2, 3);
   		// findContours
  		cv::findContours(canny_output, contours_, hierarchy_, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
-
-  		// Draw contours
+  		// draw contours
   		cv::Mat drawing = cv::Mat::zeros(canny_output.size(), CV_8UC3 );
- 		for( int i = 0; i< contours_.size(); i++ ) {
-			// only countours	       			
+ 		for(int i = 0; i< contours_.size(); i++ ) {
+			// only countours     			
 			drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
-			// countours + filled color
-			//drawContours(drawing, contours_, i, cv::Scalar(255,0,0), CV_FILLED, 8, hierarchy_);
-     		}
+     		}*/
 
+		// Update/show images
+		//imshow("original RGB",rgbmat);
+		imshow("afterTRACK",frameToTrack);
+		//imshow("regframe",regframe);
+       	 	//imshow("depth", depthmat);
+  		//imshow( "Contours", drawing);
 
-/*
-		// obtain the image ROI
-		cv::Mat undistortedFrame = cv::Mat(regframe.size(), CV_8UC1);
-		cv::Mat segmat = Mat::zeros(regframe.size(), undistortedFrame.type());
-		cv::Mat roiSegment = Mat::zeros(regframe.size(), undistortedFrame.type());
-
-		//THIS LOOP COMPUTES A CIRCLE BASED ON THE mainCenter VARIABLE COMPUTED BY THE trackUser METHOD.
-		if ((mainCenter.x != -1000) && (mainCenter.x != 0)){
-			int radius = 5;
-
-			cout << "mainCenter.x: " << mainCenter.x << " - mainCenter.y: " << mainCenter.y 
-	<< " radius: " << radius << endl;
-			//cout << "rgbmat(x,y): " << rgbmat.at<float>(mainCenter.y, mainCenter.x) << endl;
-			//cout << "depthmat(x,y): " << depthmat.at<float>(mainCenter.y, mainCenter.x) << endl << endl;
-
-			//get the Rect containing the circle:
-		    	cv::Rect r(mainCenter.x-radius, mainCenter.y-radius, radius*2,radius*2);
-
-			// region of interest
-		    	cv::Mat roi(regframe, r);
-
-
-		    	// make a black mask, same size:
-		    	cv::Mat maskROI(roi.size(), roi.type(), cv::Scalar::all(0));
-
-		    	// with a white, filled circle in it:
-		    	cv::circle(rgbmat, cv::Point(radius,radius), radius, cv::Scalar::all(255), -1);
-
-		    	// combine roi & mask:
-		    	cv::Mat roiArea = roi & maskROI;
-
-		    	cv:Scalar m = cv::mean(roi);        // compute mean value of the region of interest (mm).
-		    	meanDistance = m[0] / 1000.0f;     // compute distance (in meters)
-
-			cout << "distance: " << meanDistance << endl;
-
-		    	// perform segmentation in order to get the contraction index feature. The result will be saved in ci variable
-		    	// void segmentDepth(cv::Mat& input, cv::Mat& dst, cv::Mat& roiSeg, int sX, int sY, int threshold)
-		    	segmentDepth(regframe, segmat, roiSegment, mainCenter.x, mainCenter.y, ci, 300);
-
-		} */
-
-
-
-		//cv::Mat image_roi = cv::Mat(drawing.size(), CV_8UC1);
-		if ((mainCenter.x != -1000) && (mainCenter.x != 0)) {
-			int radius = 5;
-
-			// Rect containing ROI
-			cv::Rect r(mainCenter.x-radius, mainCenter.y-radius, radius*2,radius*2);
-			cv::Mat image_roi = drawing(r);
-
-			cv:Scalar m = cv::mean(image_roi);        // compute mean value of the region of interest (mm).
-		    	meanDistance = m[0] / 1000.0f;            // compute distance (in meters)
-
-			//cout << "distance: " << meanDistance << endl;
-
-		}
-
-
-		/* PRINT THE DISTANCE */
-    		/*for (int i=1; i < (pts.size()-1); i++) {
-	    		cv::Point2f ptback = pts[i - 1];
-	    		cv::Point2f pt = pts[i];
-	    		if ((ptback.x == -1000) or (pt.x == -1000)) continue;
-
-	    		// otherwise, compute the thickness of the line and draw the connecting lines
-	    		int thickness = int(sqrt(BUFFER / float(i + 1)) * 2.5);
-	    		line(drawing, pts[i - 1], pts[i], cv::Scalar(0, 0, 255), thickness);
-		    	// Write distance
-		    	cv::putText(drawing,
-			    		std::to_string(meanDistance),
-			    		cv::Point((512/2)-60,85), // Coordinates
-			    		cv::FONT_HERSHEY_COMPLEX_SMALL, // Font
-			    		1.0, // Scale 2.0 = 2x bigger
-			    		cv::Scalar(255,255,255), // Color
-			    		1 // Thickness
-		    		); // Anti-alias
-	    	}*/
-
-
-		/* Update/show images */
-		cv::imshow("afterTRACK",rgbmat);
-       	 	//cv::imshow("depth", depthmat);
-
-		// Show in a window
-  		cv::imshow( "Contours", drawing);
-
-
-		out.write(rgbmat);
+		// save recorded video
+		//out.write(rgbmat);
 
 		// waitKey needed for showing the plots with cv::imshow
-		char key = cv::waitKey(1);
+		char key = cv::waitKey(10);
 		if(key == 27) {
-			acquire = false;
-
 			//cleaning up
- 			cvDestroyAllWindows(); 
+ 			cvDestroyAllWindows();
+ 			break;
 		}
 
-		gray.copyTo(prevgray);
-		
+		gray.copyTo(prevgray);		
 	}
-
-	// TODO close session with DEV
-    //dev->stop();
-    //dev->close();
     std::cout << "Shutting down!" << std::endl;
     return 0;
 } catch (const rs::error & e) {
