@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(test_rs)
-add_compile_options(-std=c++11 -fPIC -lusb-1.0 -lpthread )
+add_compile_options(-std=c++11 -fPIC -lusb-1.0 -lpthread -lboost_iostreams -lboost_filesystem -lboost_system)
 include_directories(include)
 include_directories(/home/aerolabio/librealsense/examples/myexample/third_party)
 
@@ -81,4 +81,4 @@ add_executable(${PROJECT_NAME} src/main.cpp
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries( ${PROJECT_NAME}
-${LIBS} ${GLFW_LIBRARIES} ${OpenCV_LIBS} ${CMAKE_THREAD_LIBS_INIT} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} ${GLFW_LIBRARIES})
+${LIBS} ${GLFW_LIBRARIES} ${OpenCV_LIBS} ${CMAKE_THREAD_LIBS_INIT} ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} ${GLFW_LIBRARIES} ${Boost_LIBRARIES})

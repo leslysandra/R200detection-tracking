@@ -35,9 +35,10 @@
 #include "common.h"
 
 /* ... */
-
-/* */
 #include "gnuplot-iostream.h"
+
+#include <boost/tuple/tuple.hpp>
+/* */
 
 /* HSV space variables for GREEN blob detection */
 int hMin = 40;
@@ -426,7 +427,9 @@ try {
      		}
 
 
-		// PLOTS
+		// PLOT TEST
+		// gnuplot
+		//Gnuplot gp("My plot");
 		// movingPoints vector
 		vector<Point2f> movingPoints;
 
@@ -438,6 +441,11 @@ try {
 			}
 		}
 
+		//gp << "plot '-' with lines title 'e'" ;
+		/*gp.send1d(movingPoints);
+		gp.flush();*/
+		// time
+
 		if (movingPoints.size() > 0) {
 			float mean_x = mean(movingPoints)[0];
 			float mean_y = mean(movingPoints)[1];
@@ -445,6 +453,9 @@ try {
 			cout << " - mean(movingPoints).X: " << mean_x
 			<< " - mean(movingPoints).Y: " << mean_y
 			<< endl;
+			
+			//gp << "plot '-' with lines title 'e'" ;
+			//gp.send1d(movingPoints);
 		}
 
 		// Update/show images
@@ -464,10 +475,6 @@ try {
 
 		gray.copyTo(prevgray);
 
-
-
-		// PLOT TEST
-		Gnuplot gp;
 		
 
 	}
