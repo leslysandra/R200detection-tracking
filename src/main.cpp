@@ -33,7 +33,11 @@
 /* Local includes */
 #include "utils.h"
 #include "common.h"
+
 /* ... */
+
+/* */
+#include "gnuplot-iostream.h"
 
 /* HSV space variables for GREEN blob detection */
 int hMin = 40;
@@ -52,7 +56,7 @@ using namespace cv;
 
 
 cv::Point2f mainCenter;         // variable for blob center tracking
-bool missedPlayer;              // a flag for the player presence.
+bool missedPlayer;              // flag for the player presence.
 
 const int BUFFER = 32;          			// the object trail size
 boost::circular_buffer<cv::Point2f> pts(BUFFER);    	// The blob location history
@@ -76,7 +80,7 @@ static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, Mat& aux, int step, d
             circle(cflowmap, Point(x,y), 2, color, -1);
 
 	    if( (fabs(fxy.x)>5) && (fabs(fxy.y)>5) ) {		
-		//line(aux, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,0,0));
+		line(aux, Point(x,y), Point(cvRound(x+fxy.x), cvRound(y+fxy.y)), Scalar(255,255,255));
 		circle(aux, Point(x,y), 2, Scalar(255,255,255), -1); 
 	    }
         }
@@ -85,6 +89,8 @@ static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, Mat& aux, int step, d
 
 /* Creates the blob/optFlow map*/
 static void boblification(const Mat& flow, Mat& flowAndColor, Mat& result, int sX, int sY) {
+	int ci;
+	result = Mat::zeros(flow.size(), CV_8UC1);
     	long int pixels = 0; // pixels counter
 	vector<vector<int> > reach;	       // binary mask for the segmentation.
 	for (int i = 0; i < flow.rows; i++){	// values in zero, no pixel is assigned to the segmentation.
@@ -94,11 +100,188 @@ static void boblification(const Mat& flow, Mat& flowAndColor, Mat& result, int s
 	// Define the queue. NOTE: it is a BFS based algorithm.
 	std::queue< std::pair<int,int> > seg_queue;
 
-	cout << "sX: " << sX << " - sY: " << sY << endl;
+	if (flow.at<float>(sY,sX) != 0) {
+		result.at<int>(sY,sX) = 255;
 
-	// verify the depth value of the seed position.
-	//float &in_pxl_pos = flow.at<float>(sY,sX);
-	//cout << "center value: " << in_pxl_pos << endl;
+		// Mark the seed as 1, for the segmentation mask.
+	    	reach[sY][sX] = 1;
+		pixels++;
+
+		// init the queue with seed.
+        	seg_queue.push(std::make_pair(sY,sX));
+        	while(!seg_queue.empty()) {
+        		// pop values
+        		std::pair<int,int> s = seg_queue.front();
+	    		int x = s.second;
+	    		int y = s.first;
+		    	seg_queue.pop();
+
+		    	// Right pixel
+	    		if((x+1 < flowAndColor.cols) && (!reach[y][x + 1]) &&
+		       		(flow.at<float>(y,x+1)!=0)) {
+				reach[y][x+1] = true;
+				seg_queue.push(std::make_pair(y, x+1));
+				// TODO check
+		    		//float &pixel = result.at<float>(y,x+1);
+				//pixel = 255;
+		    		pixels++;;
+
+	    		}
+
+	    		//Below Pixel
+	    		if((y+1 < flowAndColor.rows) && (!reach[y+1][x]) &&
+		        	(flow.at<float>(y+1,x)!=0)) {
+	    			reach[y+1][x] = true;
+	    			seg_queue.push(std::make_pair(y+1,x));
+	    			//result.at<int>(y+1,x) = 255;
+	    			pixels++;;
+	    		}
+
+	    		//Left Pixel
+	    		if((x-1 >= 0) && (!reach[y][x-1]) &&
+		        	(flow.at<float>(y,x-1)!=0)) {
+	    			reach[y][x-1] = true;
+	    			seg_queue.push(std::make_pair(y,x-1));
+	    			//result.at<int>(y,x-1) = 255;
+	    			pixels++;;
+	    		}
+
+	    		//Above Pixel
+	    		if((y-1 >= 0) && (!reach[y-1][x]) &&
+		        	(flow.at<float>(y-1,x) !=0)) {
+	    			reach[y-1][x] = true;
+	    			seg_queue.push(std::make_pair(y-1,x));
+	    			//result.at<int>(y-1,x) = 255;
+	    			pixels++;;
+	    		}
+
+	    		//Bottom Right Pixel
+	    		if((x+1 < flowAndColor.cols) && (y+1 < flowAndColor.rows) && (!reach[y+1][x+1]) &&
+		        	(flow.at<float>(y+1,x+1)!=0)) {
+	    			reach[y+1][x+1] = true;
+	    			seg_queue.push(std::make_pair(y+1,x+1));
+	    			//result.at<int>(y+1,x+1) = 255;
+	    			pixels++;
+	    		}
+
+	    		//Upper Right Pixel
+	    		if((x+1 < flowAndColor.cols) && (y-1 >= 0) && (!reach[y-1][x+1]) &&
+		        	(flow.at<float>(y-1,x+1)!=0)) {
+	    			reach[y-1][x+1] = true;
+	    			seg_queue.push(std::make_pair(y-1,x+1));
+	    			//result.at<int>(y-1,x+1) = 255;
+	    			pixels++;
+	    		}
+
+	    		//Bottom Left Pixel
+	    		if((x-1 >= 0) && (y + 1 < flowAndColor.rows) && (!reach[y+1][x-1]) &&
+		        	(flow.at<float>(y+1,x-1)!=0)) {
+	    			reach[y+1][x-1] = true;
+	    			seg_queue.push(std::make_pair(y+1,x-1));
+	    			//result.at<int>(y+1,x-1) = 255;
+	    			pixels++;
+	    		}
+
+	    		//Upper left Pixel
+	    		if((x-1 >= 0) && (y-1 >= 0) && (!reach[y-1][x-1]) &&
+		        	(flow.at<float>(y-1,x-1)!=0)) {
+	    			reach[y-1][x-1] = true;
+	    			seg_queue.push(std::make_pair(y-1,x-1));
+	    			//result.at<int>(y-1,x-1) = 255;
+		        	pixels++;
+	    		}
+        	}
+
+		// finding countours for the blob
+		vector<vector<Point>> contours;
+	    	vector<Vec4i> hierarchy;
+
+		Mat bwImage(flowAndColor.size(),CV_8UC1);
+		result.convertTo(bwImage,CV_8U,255.0/(255-0));
+	    	cv::findContours(bwImage, contours, hierarchy,
+		             CV_RETR_EXTERNAL,
+		             CV_CHAIN_APPROX_SIMPLE);
+
+		// continue if at least one countour was found
+	    	if (contours.size() > 0) {
+		    	Mat erodeElement = cv::getStructuringElement(cv::MORPH_RECT,cv::Size(3,3));
+		    	Mat dilateElement = cv::getStructuringElement(cv::MORPH_RECT,cv::Size(8,8));
+		    	erode(result, result, erodeElement);
+		    	dilate(result, result, dilateElement);
+
+		    	int largest_area=0;
+	    	  	int largest_contour_index=0;
+
+	    		// find the largest contour in the mask to compute the minimum enclosing circle
+	    		for(int i=0; i < contours.size(); i++) {
+	    			// iterate through each contour.
+		        	double a = contourArea(Mat(contours[i]),false);  //  Find the area of contour
+
+	    			if( a > largest_area) {
+	    				largest_area=a;
+	    				largest_contour_index=i;   //Store the index of largest contour
+	    			}
+	    		}
+
+			// minimum bounding box for the detected blob
+			Rect rect = boundingRect(contours[largest_contour_index]);
+			Point pt1, pt2;
+			pt1.x = rect.x;
+			pt1.y = rect.y;
+			pt2.x = rect.x + rect.width;
+			pt2.y = rect.y + rect.height;
+
+		   	// compute CI
+			Mat roiSeg = cv::Mat(result, rect);
+			int roiSegarea = roiSeg.total();
+			ci = float(roiSegarea-pixels)/float(roiSegarea);
+
+			// compute "middle point"
+		    	Mat test = cv::Mat(result,rect);
+		    	int begin = 0, loop_counter = 0, row = 10;
+		    	bool sign = false;
+
+		    	for (int j=0;j < test.cols;j++) {                 //Basically cost O(n)
+				if (test.at<float>(row,j) == 255){
+				    if(!sign) {
+				        begin = j;
+				        sign = !sign;
+				    }
+				    loop_counter++;
+				} else if(sign && test.at<float>(row,j) == 0){
+				    break;
+				}
+		    	}
+
+		    	int mid = std::ceil(loop_counter/2);
+		    	int topPoint = begin + (mid-1);
+
+		   	// apply color to frame
+		   	Mat segmentedColorFrame, segmentedTarget;
+		    	vector<Mat> tempcolorFrame(3);
+		    	Mat black = Mat::zeros(result.size(), result.type());
+		    	tempcolorFrame.at(0) = black; //for blue channel
+		    	tempcolorFrame.at(1) = result;   //for green channel
+		    	tempcolorFrame.at(2) = black;  //for red channel
+
+		    	merge(tempcolorFrame, segmentedColorFrame);
+			// Draws the rect in the segmentedColorFrame image
+		     	circle(segmentedColorFrame, Point(sX,sY),5, Scalar(0,0,255),CV_FILLED, 8,0);
+		    	segmentedTarget = cv::Mat(segmentedColorFrame,rect);
+		     	circle(segmentedTarget, Point(topPoint,10),5, Scalar(0,0,255),CV_FILLED, 8,0);
+
+			rectangle(segmentedColorFrame, pt1, pt2, cv::Scalar(255,255,255), 2,8,0);
+
+			// putting CI into the frame
+		   	putText(segmentedColorFrame, to_string(ci),
+		    		Point(rect.x,rect.y-5), // Coordinates
+		    		FONT_HERSHEY_COMPLEX_SMALL, // Font
+		   	 	0.9, // Scale. 2.0 = 2x bigger
+		    		Scalar(255,255,255), // Color
+		    		1 // Thickness
+		    		); // Anti-alias
+		}
+	}
 }
 
 /* main */
@@ -186,7 +369,7 @@ try {
                 depth16.convertTo(depthM, CV_8UC3);
 		// min/max distance from the camera
 		unsigned short min = 0.5, max = 3.5;
-		cv::Mat img0 = cv::Mat::zeros(depthM.size().height, depthM.size().width, CV_8UC1);
+		cv::Mat img0 = Mat::zeros(depthM.size().height, depthM.size().width, CV_8UC1);
 		cv::Mat depth_show;
 		double scale_ = 255.0 / (max-min);
 
@@ -208,17 +391,14 @@ try {
 			sflow = Mat(flow.size(), CV_8UC3);
 			aux = Mat::ones(flow.size(), CV_8U);
 			drawOptFlowMap(flow, sflow, aux, 16, 1.5, Scalar(0, 255, 0));
-			//imshow("sflow", sflow); //imshow("flow_aux", aux);
+			//imshow("sflow", sflow); imshow("flow_aux", aux);
 
-			//cvtColor(sflow, flow1, CV_BGR2GRAY);
 			aux.convertTo(flow1, CV_8U);
 
 			// magnitude,angle
 			cv::Mat xy[2];
 			split(flow, xy);
-
-			//calculate angle and magnitude
-			Mat magnitude, angle;
+			Mat magnitude, angle; //calculate angle and magnitude
 			cartToPolar(xy[0], xy[1], magnitude, angle, true);
 			double mag_max;
 			minMaxLoc(magnitude, 0, &mag_max);
@@ -232,40 +412,44 @@ try {
 		rgbmat.copyTo(frameToTrack);
 		trackUser(frameToTrack, regframe);
 
+
 		// flow matrix AND green track
      		if (flow1.cols > 0 && flow1.rows > 0) {
-     			Mat res;
-     			addWeighted( flow1, 0.5, regframe, 0.5, 0.0, res);
-			//bitwise_and(flow1, regframe, res, regframe);
-			circle(res, mainCenter, 5, cv::Scalar(255, 255, 255), -1);
-			imshow("res", res);
-			// boblificatonMethod(input: flow1, res, output)
-			//boblification(flow1, res, output, mainCenter.x, mainCenter.y);
+     			Mat flowAndGreen;
+     			//addWeighted(flow1, 0.5, regframe, 0.5, 0.0, flowAndGreen);
+			bitwise_and(regframe, flow1, flowAndGreen, regframe);
+			//circle(res, mainCenter, 5, cv::Scalar(255, 255, 255), -1);
+			imshow("flowAndGreen", flowAndGreen);
+			// boblificatonMethod(input: flow1, flowAndGreen, output)
+			boblification(flow1, flowAndGreen, output, mainCenter.x, mainCenter.y);
+
      		}
 
 
-		/*// detecting borders
-		cv::Mat clonemask = regframe.clone();
-		cv::Mat canny_output;
-  		std::vector<std::vector<cv::Point> > contours_;
-  		std::vector<cv::Vec4i> hierarchy_;
-  		// detect edges using canny
-  		Canny(clonemask, canny_output, thresh, thresh*2, 3);
-  		// findContours
- 		cv::findContours(canny_output, contours_, hierarchy_, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
-  		// draw contours
-  		cv::Mat drawing = cv::Mat::zeros(canny_output.size(), CV_8UC3 );
- 		for(int i = 0; i< contours_.size(); i++ ) {
-			// only countours     			
-			drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
-     		}*/
+		// PLOTS
+		// movingPoints vector
+		vector<Point2f> movingPoints;
+
+		for(int y = 0; y < flow.rows; y += 16) {
+			for(int x = 0; x < flow.cols; x += 16) {
+				const Point2f& f = flow.at<Point2f>(y, x);
+				// condition to take points into account
+				if(fabs(f.x)>8 && fabs(f.y)>8) movingPoints.push_back(cv::Point2f(x, y));
+			}
+		}
+
+		if (movingPoints.size() > 0) {
+			float mean_x = mean(movingPoints)[0];
+			float mean_y = mean(movingPoints)[1];
+			
+			cout << " - mean(movingPoints).X: " << mean_x
+			<< " - mean(movingPoints).Y: " << mean_y
+			<< endl;
+		}
 
 		// Update/show images
-		//imshow("original RGB",rgbmat);
 		imshow("afterTRACK",frameToTrack);
-		//imshow("regframe",regframe);
        	 	//imshow("depth", depthmat);
-  		//imshow( "Contours", drawing);
 
 		// save recorded video
 		//out.write(rgbmat);
@@ -278,7 +462,14 @@ try {
  			break;
 		}
 
-		gray.copyTo(prevgray);		
+		gray.copyTo(prevgray);
+
+
+
+		// PLOT TEST
+		Gnuplot gp;
+		
+
 	}
     std::cout << "Shutting down!" << std::endl;
     return 0;
@@ -288,3 +479,22 @@ try {
 	<< "-" << e.get_failed_args().c_str() << "-:     " << e.what() << endl;
 	return EXIT_FAILURE;
 }
+
+
+
+
+/*// detecting borders
+cv::Mat clonemask = regframe.clone();
+cv::Mat canny_output;
+std::vector<std::vector<cv::Point> > contours_;
+std::vector<cv::Vec4i> hierarchy_;
+// detect edges using canny
+Canny(clonemask, canny_output, thresh, thresh*2, 3);
+// findContours
+cv::findContours(canny_output, contours_, hierarchy_, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+// draw contours
+cv::Mat drawing = cv::Mat::zeros(canny_output.size(), CV_8UC3 );
+for(int i = 0; i< contours_.size(); i++ ) {
+	// only countours     			
+	drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
+}*/
