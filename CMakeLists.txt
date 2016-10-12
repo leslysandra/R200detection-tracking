@@ -77,7 +77,7 @@ aux_source_directory(. SRC_LIST)
 ## Declare a C++ executable
 add_executable(${PROJECT_NAME} src/main.cpp
                     src/utils.cpp
-                    )
+              )
 
 ## Specify libraries to link a library or executable target against
 target_link_libraries( ${PROJECT_NAME}
