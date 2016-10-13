@@ -14,6 +14,7 @@
 #include <time.h>
 #include <signal.h>
 #include <utility>
+#include <stdlib.h>
 #include <cstdlib>
 #include <boost/circular_buffer.hpp>
 
@@ -28,10 +29,12 @@
 #include "opencv2/imgcodecs.hpp"
 #include "opencv2/objdetect/objdetect.hpp"
 
-
 /* librealsense libraries */
 #include <librealsense/rs.hpp>
 
+/* for timing */
+#include <chrono>
+#include <thread>
 
 /* local includes */
 #include "utils.h"
@@ -52,10 +55,10 @@ int thresh = 100;
 using namespace std;
 using namespace cv;
 
-std::ofstream timeStatsFile_;
+ofstream timeStatsFile_;
 
-cv::Point2f mainCenter;         // variable for blob center tracking
-bool missedPlayer;              // flag for the player presence.
+Point2f mainCenter;         // variable for blob center tracking
+bool missedPlayer;          // flag for the player presence.
 
 const int BUFFER = 32;          			// the object trail size
 boost::circular_buffer<cv::Point2f> pts(BUFFER);    	// The blob location history
@@ -125,11 +128,14 @@ try {
 	//cv::VideoWriter out = VideoWriter("output.avi", codec, 60.0, Size(640, 480), true);
 
     	// openCV frame containers
-    	cv::Mat rgbmat, depthmat, depthAndRgb, regframe, aux, output;
+    	Mat rgbmat, depthmat, depthAndRgb, regframe, aux, output;
 
     	// openCV frame definition for Optical Flow
-	Mat gray, flow, sflow, flow1;
+	Mat gray, flow, sflow, flow1, greenFlowMat;
 	UMat prevgray;
+
+	// timing for plotting
+	auto startT = std::chrono::system_clock::now();
 
 	// blob detection image panel
     	cv::namedWindow("mask", 1);
@@ -143,7 +149,6 @@ try {
 
     	/* FEATURE VARIABLES */
     	float meanDistance = 0;         // distance feature
-    	int counter = 1;
 
 	// capture first 50 frames to allow camera to stabilize
 	for (int i = 0; i < 50; ++i) dev->wait_for_frames();
@@ -152,13 +157,14 @@ try {
 	timeStatsFile_.open("/home/aerolabio/LeslyTracker/pos-time.csv");
 	timeStatsFile_ << "t, x, y" << endl;
 
+
 	// loop -- DATA ACQUISITION
 	while (true) {
 
 		// wait for new frame data
 		dev->wait_for_frames();
 
-		// RGB data acquisition
+		// RGB data acquisititimeon
 		uchar *rgb = (uchar *) dev->get_frame_data(rs::stream::color);
 		// DEPTH data acquisition
 		uchar *depth = (uchar *) dev->get_frame_data(rs::stream::depth);
@@ -167,7 +173,7 @@ try {
 		// RGB
 		const uint8_t * rgb_frame = reinterpret_cast<const uint8_t *>(rgb);
 		cv::Mat rgb_ = cv::Mat(480, 640, CV_8UC3, (void*) rgb_frame);
-		cvtColor(rgb_, rgbmat, CV_BGR2RGB); // saving data into cv::mat container rgbmat
+		cvtColor(rgb_, rgbmat, CV_BGR2RGB); // saving RGB data into (mat container)rgbmat
 
                 // DEPTH
 		const uint8_t * depth_frame = reinterpret_cast<const uint8_t *>(depth);
@@ -179,11 +185,10 @@ try {
 		cv::Mat img0 = Mat::zeros(depthM.size().height, depthM.size().width, CV_8UC1);
 		cv::Mat depth_show;
 		double scale_ = 255.0 / (max-min);
-
 		depthM.convertTo(img0, CV_8UC1, scale_);
-		cv::applyColorMap(img0, depthmat, cv::COLORMAP_JET); // ColorMap to depth matrix
+		cv::applyColorMap(img0, depthmat, cv::COLORMAP_JET); // ColorMap to depthmat
 
-		// TEST OPTICAL FLOW
+		// OPTICAL FLOW
 		Mat frame(rgbmat.size(), rgbmat.type());
 		rgbmat.copyTo(frame);
 	   	cvtColor(frame, gray, COLOR_RGB2GRAY);
@@ -203,7 +208,7 @@ try {
 			aux.convertTo(flow1, CV_8U);
 
 			// magnitude,angle
-			cv::Mat xy[2];
+			Mat xy[2];
 			split(flow, xy);
 			Mat magnitude, angle; //calculate angle and magnitude
 			cartToPolar(xy[0], xy[1], magnitude, angle, true);
@@ -214,48 +219,60 @@ try {
 
 		} else gray.copyTo(prevgray);
 
-		// method to track the color blob representing the human
+		// method to track the color blob representing the player
 		Mat frameToTrack(rgbmat.size(), rgbmat.type());
 		rgbmat.copyTo(frameToTrack);
-		trackUser(frameToTrack, regframe);
+		trackUserByColor(frameToTrack, regframe);
 
 		// flow matrix AND green track
      		if (flow1.cols > 0 && flow1.rows > 0) {
-     			Mat flowAndGreen;
-     			//addWeighted(flow1, 0.5, regframe, 0.5, 0.0, flowAndGreen);
-			bitwise_and(flow1, regframe, flowAndGreen, regframe);
-			bitwise_and(flowAndGreen, regframe, flowAndGreen);
-			circle(flowAndGreen, mainCenter, 5, cv::Scalar(255, 255, 255), -1);
-			imshow("flowAndGreen", flowAndGreen);
+			bitwise_and(flow1, regframe, greenFlowMat);
+			circle(greenFlowMat, mainCenter, 5, Scalar(255, 255, 255), -1);
 
-			// boblificatonMethod(input: flow1, flowAndGreen, output)
+			// show matrix greenBlobMat && flowMat
+			imshow("greenFlowMat", greenFlowMat);
+
+			// plotting
+			vector<Point2f> movingGreenPoints;	// movingPoints vector
+			int step = 16;
+			float mean_x = 0;
+			float mean_y = 0;
+
+			for(int y = 0; y < greenFlowMat.rows; y += step)
+				for(int x = 0; x < greenFlowMat.cols; x += step)
+					if(greenFlowMat.at<unsigned short int>(y, x))
+						movingGreenPoints.push_back(Point2f(x, y));
+
+			if (movingGreenPoints.size()) {
+				mean_x = mean(movingGreenPoints)[0];
+				mean_y = mean(movingGreenPoints)[1];
+
+				// normalization
+				float norm_mean_x = (2*mean_x)/greenFlowMat.rows - 1;
+				float norm_mean_y = (2*mean_y)/greenFlowMat.cols - 1;
+
+				// get the current time
+				auto currentT = std::chrono::system_clock::now();
+				auto dur = currentT - startT;
+
+				typedef std::chrono::duration<float> float_seconds;
+				auto secs = std::chrono::duration_cast<float_seconds>(dur);
+
+				timeStatsFile_  << secs.count() << ", " 
+				<< norm_mean_x << ", " << norm_mean_y 		
+				<< endl;
+			}
+			
      		}
 
-
-		// PLOT TEST
-		// movingPoints vector
-		vector<Point2f> movingPoints;
-		int step = 16;
-
-		for(int y = 0; y < flow.rows; y += step) {
-			for(int x = 0; x < flow.cols; x += step) {
-				const Point2f& f = flow.at<Point2f>(y, x);
-				// condition to take points into account
-				if(fabs(f.x)>8 && fabs(f.y)>8) movingPoints.push_back(cv::Point2f(x, y));
-			}
-		}
-
-		if (movingPoints.size() > 0) {
-			float mean_x = mean(movingPoints)[0];
-			float mean_y = mean(movingPoints)[1];
-
-			timeStatsFile_  << counter << ", " << mean_x << ", " << mean_y << endl;
-			counter++;
-		}
+		// calling the plot
+		//system("/home/aerolabio/Desktop/gnuplot_test/gp.sh");
 
 		// Update/show images
 		imshow("afterTRACK",frameToTrack);
        	 	//imshow("depth", depthmat);
+       	 	cout << "depth.mainCenter: "<< depthmat.at<unsigned short int>(mainCenter.y, mainCenter.x) << endl;
+       	 	cout << "mainCenter.y: "<< mainCenter.y << " - mainCenter.x" << mainCenter.x << endl;
 
 		// save recorded video
 		//out.write(rgbmat);
@@ -269,10 +286,8 @@ try {
  			timeStatsFile_.close();
  			break;
 		}
-
+		// update prev frame
 		gray.copyTo(prevgray);
-
-		
 
 	}
     std::cout << "Shutting down!" << std::endl;
