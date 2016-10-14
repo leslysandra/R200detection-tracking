@@ -64,7 +64,7 @@ void trackUserByColor(cv::Mat& src, cv::Mat& regmask) {
 		int largest_contour_index=0;      // container for the index of the max area found in the countours
 
 		//find the largest contour to compute the minimum enclosing circle and centroid
-		for(int i=0; i < contours.size();i++){
+		for(int i=0; i < contours.size();i++) {
 			double a = contourArea(Mat(contours[i]),false);  //  Find the area of contour
             		// update to always get the bigger area
            		if(a > largest_area) {
@@ -110,50 +110,3 @@ void trackUserByColor(cv::Mat& src, cv::Mat& regmask) {
 	src = frame.clone();   // update the input frame
 	regmask = mask.clone(); // return value of mask
 }
-
-/*
-// another method to detect and search
-void searchForMovement(cv::Mat thresholdImage, cv::Mat &cameraFeed) {
-	bool objectDetected = false;
-	cv::Mat temp;
-	thresholdImage.copyTo(temp);
-	//vectors for output of findContours
-	std::vector<std::vector<cv::Point> > contours;
-	std::vector<cv::Vec4i> hierarchy;
-	//find contours of filtered image using openCV findContours function
-	findContours(temp,contours,hierarchy,CV_RETR_EXTERNAL,CV_CHAIN_APPROX_SIMPLE);// retrieves external contours
-
-	//if contours vector is not empty, we have found some objects
-	if(contours.size() > 0) objectDetected=true;
-	else objectDetected = false;
-
-	if(objectDetected) {
-		// the largest contour is found at the end of the contours vector
-		// we will simply assume that the biggest contour is the object we are looking for.
-		std::vector< std::vector<cv::Point> > largestContourVec;
-		largestContourVec.push_back(contours.at(contours.size()-1));
-		//make a bounding rectangle around the largest contour then find its centroid
-		//this will be the object's final estimated position.
-		objectBoundingRectangle = boundingRect(largestContourVec.at(0));
-		int xpos = objectBoundingRectangle.x+objectBoundingRectangle.width/2;
-		int ypos = objectBoundingRectangle.y+objectBoundingRectangle.height/2;
-
-		//update the objects positions by changing the 'theObject' array values
-		theObject[0] = xpos;
-		theObject[1] = ypos;
-	}
-
-	//make some temp x and y variables so we dont have to type out so much
-	int x = theObject[0];
-	int y = theObject[1];
-
-	//draw some crosshairs around the object
-	circle(cameraFeed, cv::Point(x,y), 30, cv::Scalar(0,255,0), 2);
-	line(cameraFeed, cv::Point(x,y), cv::Point(x,y-25), cv::Scalar(0,255,0), 1);
-	line(cameraFeed, cv::Point(x,y), cv::Point(x,y+25), cv::Scalar(0,255,0), 1);
-	line(cameraFeed, cv::Point(x,y), cv::Point(x-25,y), cv::Scalar(0,255,0), 1);
-	line(cameraFeed, cv::Point(x,y), cv::Point(x+25,y), cv::Scalar(0,255,0), 1);
-
-	//write the position of the object to the screen
-	putText(cameraFeed,"Tracking object at ", cv::Point(x,y), 1, 1, cv::Scalar(255,0,0),2);
-}*/

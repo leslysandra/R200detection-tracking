@@ -3,11 +3,13 @@
 
 /* librealsense NO_WARNINGS */
 #define _CRT_SECURE_NO_WARNINGS
+#define BASE_PATH "/home/aerolabio/librealsense/examples/librealsense_feat"
 
 /* std */
 #include <iostream>
 #include <fstream>
 #include <string>
+#include <map>
 #include <sstream>
 #include <stdio.h>
 #include <iomanip>
@@ -40,13 +42,13 @@
 #include "utils.h"
 #include "common.h"
 
-/* HSV space variables for GREEN blob detection */
-int hMin = 40;
-int sMin = 100;
-int vMin = 80;
-int hMax = 70;
-int sMax = 255;
-int vMax = 255;
+/* HSV space variables for PURPLE blob detection */
+int hMin = 120;
+int sMin = 148;
+int vMin = 55;
+int hMax = 256;
+int sMax = 256;
+int vMax = 130;
 /* ... */
 
 int thresh = 100;
@@ -56,6 +58,8 @@ using namespace std;
 using namespace cv;
 
 ofstream timeStatsFile_;
+
+map<int, int> distribution;
 
 Point2f mainCenter;         // variable for blob center tracking
 bool missedPlayer;          // flag for the player presence.
@@ -87,6 +91,23 @@ static void drawOptFlowMap(const Mat& flow, Mat& cflowmap, Mat& aux, int step, d
 	    }
         }
     }
+}
+
+void cleanDist() {
+	distribution.clear();
+}
+
+void insertInDist(float d) {
+	distribution[(int)d]++;
+}
+
+void printDist() {
+	for(auto p : distribution) {
+		cout << p.first << " |";
+		for(int i = 0; i < p.second; i++) cout << "·";
+		cout << endl;
+	}
+		cout << endl << endl << endl << endl << endl << endl << endl << endl << endl << endl;
 }
 
 /* main */
@@ -123,9 +144,9 @@ try {
 	// start the device
 	dev->start();
 
-	// recording
-	//int codec = CV_FOURCC('M', 'J', 'P', 'G');
-	//cv::VideoWriter out = VideoWriter("output.avi", codec, 60.0, Size(640, 480), true);
+	// recording and writing into --> "output.avi"
+	int codec = CV_FOURCC('M', 'J', 'P', 'G');
+	cv::VideoWriter out = VideoWriter("output.avi", codec, 10.0, Size(640, 480), true);
 
     	// openCV frame containers
     	Mat rgbmat, depthmat, depthAndRgb, regframe, aux, output;
@@ -154,8 +175,10 @@ try {
 	for (int i = 0; i < 50; ++i) dev->wait_for_frames();
 
 	// save data in csv to plot later
-	timeStatsFile_.open("/home/aerolabio/LeslyTracker/pos-time.csv");
-	timeStatsFile_ << "t, x, y" << endl;
+	timeStatsFile_.open("../gnuplot/pos-time.csv");
+	// opening with complete path:
+	//timeStatsFile_.open("/home/aerolabio/librealsense/examples/librealsense_feat/gnuplot/pos-time.csv");
+	timeStatsFile_ << "t, x, y, d" << endl;
 
 
 	// loop -- DATA ACQUISITION
@@ -177,8 +200,8 @@ try {
 
                 // DEPTH
 		const uint8_t * depth_frame = reinterpret_cast<const uint8_t *>(depth);
-		cv::Mat depth16(480, 640, CV_16UC1, (void*) depth_frame);
-                cv::Mat depthM(depth16.size().height, depth16.size().width, CV_16UC1);
+		Mat depth16(480, 2*640, CV_8U, (void*) depth_frame);
+                Mat depthM(depth16.size().height, depth16.size().width, CV_16UC1);
                 depth16.convertTo(depthM, CV_8UC3);
 		// min/max distance from the camera
 		unsigned short min = 0.5, max = 3.5;
@@ -186,7 +209,8 @@ try {
 		cv::Mat depth_show;
 		double scale_ = 255.0 / (max-min);
 		depthM.convertTo(img0, CV_8UC1, scale_);
-		cv::applyColorMap(img0, depthmat, cv::COLORMAP_JET); // ColorMap to depthmat
+
+		applyColorMap(depthM, depthmat, cv::COLORMAP_JET); // ColorMap to depthmat
 
 		// OPTICAL FLOW
 		Mat frame(rgbmat.size(), rgbmat.type());
@@ -202,7 +226,7 @@ try {
 			// optical flow points
 			sflow = Mat(flow.size(), CV_8UC3);
 			aux = Mat::ones(flow.size(), CV_8U);
-			drawOptFlowMap(flow, sflow, aux, 16, 1.5, Scalar(0, 255, 0));
+			drawOptFlowMap(flow, sflow, aux, 4, 1.5, Scalar(0, 255, 0));
 			//imshow("sflow", sflow); imshow("flow_aux", aux);
 
 			aux.convertTo(flow1, CV_8U);
@@ -214,7 +238,7 @@ try {
 			cartToPolar(xy[0], xy[1], magnitude, angle, true);
 			double mag_max;
 			minMaxLoc(magnitude, 0, &mag_max);
-			magnitude.convertTo(magnitude, 0.0, 255.0/mag_max);
+			magnitude.convertTo(magnitude, 0.0, 255.0/mag_max); // magnitude extracted from flow
 			//imshow("magnitudeFlow", magnitude);
 
 		} else gray.copyTo(prevgray);
@@ -233,19 +257,34 @@ try {
 			imshow("greenFlowMat", greenFlowMat);
 
 			// plotting
-			vector<Point2f> movingGreenPoints;	// movingPoints vector
+			vector<Point2f> movingGreenPoints;	// movingGreenPoints vector
+			vector<float> movingGreenDepthPoints;   // movingGreenDepthPoints vector 
+
 			int step = 16;
 			float mean_x = 0;
 			float mean_y = 0;
+			float mean_d = 0;
+			int movingGreenDepthPointsCount = 0;
 
 			for(int y = 0; y < greenFlowMat.rows; y += step)
 				for(int x = 0; x < greenFlowMat.cols; x += step)
-					if(greenFlowMat.at<unsigned short int>(y, x))
+					if(greenFlowMat.at<unsigned short int>(y, x)) {
 						movingGreenPoints.push_back(Point2f(x, y));
+						float d = (float) depth16.at<unsigned short int>(y, x);
+						if(d>10 && d<5000) { // [mm]
+							mean_d += d;
+							movingGreenDepthPointsCount++;
+							timeStatsFile_ << mean_d << endl;
+							insertInDist(d);
+						}
+					}
 
 			if (movingGreenPoints.size()) {
 				mean_x = mean(movingGreenPoints)[0];
 				mean_y = mean(movingGreenPoints)[1];
+
+				// mean distance
+				if(movingGreenDepthPointsCount) mean_d /= movingGreenDepthPointsCount;
 
 				// normalization
 				float norm_mean_x = (2*mean_x)/greenFlowMat.rows - 1;
@@ -258,24 +297,32 @@ try {
 				typedef std::chrono::duration<float> float_seconds;
 				auto secs = std::chrono::duration_cast<float_seconds>(dur);
 
-				timeStatsFile_  << secs.count() << ", " 
-				<< norm_mean_x << ", " << norm_mean_y 		
-				<< endl;
+				timeStatsFile_ <<
+				secs.count() << ", " << norm_mean_x << ", " << norm_mean_y << ", " <<
+				mean_d << endl;
+
+				cout << "distribution" << endl;
+				printDist();
+				cleanDist();
+
+				imshow("trackingColor-MatRGB",frameToTrack);
+				//imshow("depth16", depth16);
+				//imshow("depthmat", depthmat);
+				cout << "mean_d: " << mean_d << endl;
+
 			}
-			
+
      		}
 
 		// calling the plot
-		//system("/home/aerolabio/Desktop/gnuplot_test/gp.sh");
+		//system("/home/aerolabio/librealsense/examples/librealsense_feat/gnuplot/gp.sh");
 
 		// Update/show images
-		imshow("afterTRACK",frameToTrack);
+		//imshow("trackingColor-MatRGB",frameToTrack);
        	 	//imshow("depth", depthmat);
-       	 	cout << "depth.mainCenter: "<< depthmat.at<unsigned short int>(mainCenter.y, mainCenter.x) << endl;
-       	 	cout << "mainCenter.y: "<< mainCenter.y << " - mainCenter.x" << mainCenter.x << endl;
 
-		// save recorded video
-		//out.write(rgbmat);
+		// save recorded video written in --> output.avi
+		out.write(frameToTrack);
 
 		// waitKey needed for showing the plots with cv::imshow
 		char key = cv::waitKey(10);
@@ -298,224 +345,3 @@ try {
 	<< "-" << e.get_failed_args().c_str() << "-:     " << e.what() << endl;
 	return EXIT_FAILURE;
 }
-
-
-
-
-/*// detecting borders
-cv::Mat clonemask = regframe.clone();
-cv::Mat canny_output;
-std::vector<std::vector<cv::Point> > contours_;
-std::vector<cv::Vec4i> hierarchy_;
-// detect edges using canny
-Canny(clonemask, canny_output, thresh, thresh*2, 3);
-// findContours
-cv::findContours(canny_output, contours_, hierarchy_, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
-// draw contours
-cv::Mat drawing = cv::Mat::zeros(canny_output.size(), CV_8UC3 );
-for(int i = 0; i< contours_.size(); i++ ) {
-	// only countours     			
-	drawContours(drawing, contours_, i, cv::Scalar(255,0,0), 2, 8, hierarchy_, 0, cv::Point());
-}*/
-
-
-/* // Creates the blob/optFlow map
-static void boblification(const Mat& flow, Mat& flowAndColor, Mat& result, int sX, int sY) {
-	int ci;
-	result = Mat::zeros(flow.size(), CV_8UC1);
-    	long int pixels = 0; // pixels counter
-	vector<vector<int> > reach;	       // binary mask for the segmentation.
-	for (int i = 0; i < flow.rows; i++){	// values in zero, no pixel is assigned to the segmentation.
-		reach.push_back(vector<int>(flow.cols));
-	}
-
-	// Define the queue. NOTE: it is a BFS based algorithm.
-	std::queue< std::pair<int,int> > seg_queue;
-
-	if (flow.at<float>(sY,sX) != 0) {
-		result.at<int>(sY,sX) = 255;
-
-		// Mark the seed as 1, for the segmentation mask.
-	    	reach[sY][sX] = 1;
-		pixels++;
-
-		// init the queue with seed.
-        	seg_queue.push(std::make_pair(sY,sX));
-        	while(!seg_queue.empty()) {
-        		// pop values
-        		std::pair<int,int> s = seg_queue.front();
-	    		int x = s.second;
-	    		int y = s.first;
-
-			if (x > 0 && y > 0) {
-				// lkdflkdj
-				seg_queue.pop();
-
-			    	// Right pixel
-		    		if((x+1 < flowAndColor.cols) && (!reach[y][x + 1]) &&
-			       		(flow.at<float>(y,x+1)!=0)) {
-					reach[y][x+1] = true;
-					seg_queue.push(std::make_pair(y, x+1));
-					// TODO check
-			    		//float &pixel = result.at<float>(y,x+1);
-					//pixel = 255;
-			    		pixels++;;
-
-		    		}
-
-		    		//Below Pixel
-		    		if((y+1 < flowAndColor.rows) && (!reach[y+1][x]) &&
-					(flow.at<float>(y+1,x)!=0)) {
-		    			reach[y+1][x] = true;
-		    			seg_queue.push(std::make_pair(y+1,x));
-		    			//result.at<int>(y+1,x) = 255;
-		    			pixels++;;
-		    		}
-
-		    		//Left Pixel
-		    		if((x-1 >= 0) && (!reach[y][x-1]) &&
-					(flow.at<float>(y,x-1)!=0)) {
-		    			reach[y][x-1] = true;
-		    			seg_queue.push(std::make_pair(y,x-1));
-		    			//result.at<int>(y,x-1) = 255;
-		    			pixels++;;
-		    		}
-
-		    		//Above Pixel
-		    		if((y-1 >= 0) && (!reach[y-1][x]) &&
-					(flow.at<float>(y-1,x) !=0)) {
-		    			reach[y-1][x] = true;
-		    			seg_queue.push(std::make_pair(y-1,x));
-		    			//result.at<int>(y-1,x) = 255;
-		    			pixels++;;
-		    		}
-
-		    		//Bottom Right Pixel
-		    		if((x+1 < flowAndColor.cols) && (y+1 < flowAndColor.rows) && (!reach[y+1][x+1]) &&
-					(flow.at<float>(y+1,x+1)!=0)) {
-		    			//reach[y+1][x+1] = true;
-		    			seg_queue.push(std::make_pair(y+1,x+1));
-		    			//result.at<int>(y+1,x+1) = 255;
-		    			pixels++;
-		    		}
-
-		    		//Upper Right Pixel
-		    		if((x+1 < flowAndColor.cols) && (y-1 >= 0) && (!reach[y-1][x+1]) &&
-					(flow.at<float>(y-1,x+1)!=0)) {
-		    			reach[y-1][x+1] = true;
-		    			seg_queue.push(std::make_pair(y-1,x+1));
-		    			//result.at<int>(y-1,x+1) = 255;
-		    			pixels++;
-		    		}
-
-		    		//Bottom Left Pixel
-		    		if((x-1 >= 0) && (y + 1 < flowAndColor.rows) && (!reach[y+1][x-1]) &&
-					(flow.at<float>(y+1,x-1)!=0)) {
-		    			reach[y+1][x-1] = true;
-		    			seg_queue.push(std::make_pair(y+1,x-1));
-		    			//result.at<int>(y+1,x-1) = 255;
-		    			pixels++;
-		    		}
-
-		    		//Upper left Pixel
-		    		if((x-1 >= 0) && (y-1 >= 0) && (!reach[y-1][x-1]) &&
-					(flow.at<float>(y-1,x-1)!=0)) {
-		    			reach[y-1][x-1] = true;
-		    			seg_queue.push(std::make_pair(y-1,x-1));
-		    			//result.at<int>(y-1,x-1) = 255;
-					pixels++;
-		    		}
-			}
-        	}
-
-		// finding countours for the blob
-		vector<vector<Point>> contours;
-	    	vector<Vec4i> hierarchy;
-
-		Mat bwImage(flowAndColor.size(),CV_8UC1);
-		result.convertTo(bwImage,CV_8U,255.0/(255-0));
-	    	cv::findContours(bwImage, contours, hierarchy,
-		             CV_RETR_EXTERNAL,
-		             CV_CHAIN_APPROX_SIMPLE);
-
-		// continue if at least one countour was found
-	    	if (contours.size() > 0) {
-		    	Mat erodeElement = cv::getStructuringElement(cv::MORPH_RECT,cv::Size(3,3));
-		    	Mat dilateElement = cv::getStructuringElement(cv::MORPH_RECT,cv::Size(8,8));
-		    	erode(result, result, erodeElement);
-		    	dilate(result, result, dilateElement);
-
-		    	int largest_area=0;
-	    	  	int largest_contour_index=0;
-
-	    		// find the largest contour in the mask to compute the minimum enclosing circle
-	    		for(int i=0; i < contours.size(); i++) {
-	    			// iterate through each contour.
-		        	double a = contourArea(Mat(contours[i]),false);  //  Find the area of contour
-
-	    			if( a > largest_area) {
-	    				largest_area=a;
-	    				largest_contour_index=i;   //Store the index of largest contour
-	    			}
-	    		}
-
-			// minimum bounding box for the detected blob
-			Rect rect = boundingRect(contours[largest_contour_index]);
-			Point pt1, pt2;
-			pt1.x = rect.x;
-			pt1.y = rect.y;
-			pt2.x = rect.x + rect.width;
-			pt2.y = rect.y + rect.height;
-
-		   	// compute CI
-			Mat roiSeg = cv::Mat(result, rect);
-			int roiSegarea = roiSeg.total();
-			ci = float(roiSegarea-pixels)/float(roiSegarea);
-
-			// compute "middle point"
-		    	Mat test = cv::Mat(result,rect);
-		    	int begin = 0, loop_counter = 0, row = 10;
-		    	bool sign = false;
-
-		    	for (int j=0;j < test.cols;j++) {                 //Basically cost O(n)
-				if (test.at<float>(row,j) == 255){
-				    if(!sign) {
-				        begin = j;
-				        sign = !sign;
-				    }
-				    loop_counter++;
-				} else if(sign && test.at<float>(row,j) == 0){
-				    break;
-				}
-		    	}
-
-		    	int mid = std::ceil(loop_counter/2);
-		    	int topPoint = begin + (mid-1);
-
-		   	// apply color to frame
-		   	Mat segmentedColorFrame, segmentedTarget;
-		    	vector<Mat> tempcolorFrame(3);
-		    	Mat black = Mat::zeros(result.size(), result.type());
-		    	tempcolorFrame.at(0) = black; //for blue channel
-		    	tempcolorFrame.at(1) = result;   //for green channel
-		    	tempcolorFrame.at(2) = black;  //for red channel
-
-		    	merge(tempcolorFrame, segmentedColorFrame);
-			// Draws the rect in the segmentedColorFrame image
-		     	circle(segmentedColorFrame, Point(sX,sY),5, Scalar(0,0,255),CV_FILLED, 8,0);
-		    	segmentedTarget = cv::Mat(segmentedColorFrame,rect);
-		     	circle(segmentedTarget, Point(topPoint,10),5, Scalar(0,0,255),CV_FILLED, 8,0);
-
-			rectangle(segmentedColorFrame, pt1, pt2, cv::Scalar(255,255,255), 2,8,0);
-
-			// putting CI into the frame
-		   	putText(segmentedColorFrame, to_string(ci),
-		    		Point(rect.x,rect.y-5), // Coordinates
-		    		FONT_HERSHEY_COMPLEX_SMALL, // Font
-		   	 	0.9, // Scale. 2.0 = 2x bigger
-		    		Scalar(255,255,255), // Color
-		    		1 // Thickness
-		    		); // Anti-alias
-		}
-	}
-}*/

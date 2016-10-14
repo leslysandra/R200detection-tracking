@@ -1,0 +1,25 @@
+#!/usr/bin/gnuplot
+reset
+
+set xlabel "time"
+#set xrange [0:70] 
+#set yrange [0:7] 
+
+#set term png
+#set output "time_stats_graph.png"
+
+set datafile separator ","
+
+set key autotitle columnhead
+set key reverse Left outside
+set grid
+set style data linespoints
+
+plot input_file using 1:2, \
+"" using 1:3, \
+"" using 1:4, \
+"" using 1:5
+#
+
+pause 0.2
+reread

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8)
 project(test_rs)
-add_compile_options(-std=c++11 -fPIC -lusb-1.0 -lpthread -lboost_iostreams -lboost_filesystem -lboost_system)
+add_compile_options(-std=c++11 -fPIC -lusb-1.0 -lpthread)
 include_directories(include)
 include_directories(/home/aerolabio/librealsense/examples/myexample/third_party)
 
