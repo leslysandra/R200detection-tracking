@@ -2,8 +2,8 @@
 reset
 
 set xlabel "time"
-#set xrange [0:70] 
-#set yrange [0:7] 
+#set xrange [0:70]
+#set yrange [0:7]
 
 #set term png
 #set output "time_stats_graph.png"
